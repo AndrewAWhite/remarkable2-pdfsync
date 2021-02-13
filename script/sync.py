@@ -4,6 +4,7 @@ import paramiko
 from config.ssh_config import ssh_passphrase, RM_IP
 
 XOCHITL_PATH = '/home/root/.local/share/remarkable/xochitl/'
+BACKUP_PATH = '/mnt/c/Andrew/Documents/remarkable/backup/'
 DB_FILE = './remarkable_sync.db'
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S'
 
@@ -77,7 +78,6 @@ def get_notebook_name(client, notebook_id):
 def get_db_con():
 	return sqlite3.connect(DB_FILE)
 
-
 def db_setup(client, reset=False):
 	if os.path.isfile(DB_FILE) and not reset:
 		return
@@ -146,7 +146,9 @@ def fill_db(client, cur):
 				VALUES ('{page_id}', '{notebook_id}', {page_number}, '{page_modified.strftime(TIMESTAMP_FMT)}');
 			""")
 			page_number += 1
-		
+
+
+
 def main():
 	if not is_rm_online():
 		print('remarkable could not be reached.')
