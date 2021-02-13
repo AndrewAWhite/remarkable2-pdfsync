@@ -67,14 +67,38 @@ def get_notebook_pages(client, notebook_id):
 	content = json.loads('\n'.join(stdout))
 	return content['pages']
 
+def get_notebook_name(client, notebook_id):
+	stdin, stdout, stderr = client.exec_command(f"""
+		cat {XOCHITL_PATH}{notebook_id}.metadata
+	""")
+	metadata = json.loads('\n'.join(stdout))
+	return metadata['visibleName']
+
 def get_db_con():
 	return sqlite3.connect(DB_FILE)
 
-def db_setup():
-	if os.path.isfile(DB_FILE):
+
+def db_setup(client, reset=False):
+	if os.path.isfile(DB_FILE) and not reset:
 		return
 	con = get_db_con()
 	cur = con.cursor()
+	create_tables(cur)
+	fill_db(client, cur)
+	cur.close()
+	con.commit()
+	con.close()
+
+def create_tables(cur):
+	cur.execute("""
+		DROP TABLE IF EXISTS base_modified;
+	""")
+	cur.execute("""
+		DROP TABLE IF EXISTS notebooks;
+	""")
+	cur.execute("""
+		DROP TABLE IF EXISTS pages;
+	""")
 	cur.execute("""
 		CREATE TABLE base_modified (
 			modified text
@@ -95,42 +119,45 @@ def db_setup():
 			modified text
 		);
 	""")
-	cur.close()
-	con.commit()
-	con.close()
 
+def fill_db(client, cur):
+	base_modified = get_modified(client, XOCHITL_PATH)
+	cur.execute(f"""
+		INSERT INTO base_modified (modified)
+		VALUES ('{base_modified.strftime(TIMESTAMP_FMT)}');
+	""")
+	for notebook_id in list_notebook_ids(client):
+		notebook_modified = get_modified(client, f'{XOCHITL_PATH}{notebook_id}')
+		page_ids = get_notebook_pages(client, notebook_id)
+		if not page_ids:
+			continue
+		notebook_name = get_notebook_name(client, notebook_id)
+		# create notebook row
+		cur.execute(f"""
+			INSERT INTO notebooks (id, name, modified)
+			VALUES ('{notebook_id}', '{notebook_name}', '{notebook_modified.strftime(TIMESTAMP_FMT)}');
+		""")
+		page_number = 1
+		for page_id in page_ids:
+			page_modified = get_modified(client, f'{XOCHITL_PATH}{notebook_id}/{page_id}.rm')
+			# insert page row
+			cur.execute(f"""
+				INSERT INTO pages (id, notebook_id, page_number, modified)
+				VALUES ('{page_id}', '{notebook_id}', {page_number}, '{page_modified.strftime(TIMESTAMP_FMT)}');
+			""")
+			page_number += 1
+		
 def main():
-	db_setup()
 	if not is_rm_online():
 		print('remarkable could not be reached.')
 		exit(0)
 	client = get_client()
-	for notebook_id in list_notebook_ids(client):
-		pages = get_notebook_pages(client, notebook_id)
-		if not pages:
-			continue
-		for page_id in pages:
-			print(get_modified(client, f'{XOCHITL_PATH}{notebook_id}/{page_id}.rm'))
-		
+	db_setup(client)
 	client.close()
 
 if __name__ == '__main__':
 	main()
-	# db_setup()
-	# con = get_db_con()
-	# cur = con.cursor()
-	# cur.execute("""
-	# 	INSERT INTO base_modified (modified)
-	# 	VALUES ('this is sa value');
-	# """)
-	# cur.close()
-	# cur = con.cursor()
-	# for r in cur.execute("""
-	# 		SELECT * FROM base_modified;
-	# 		"""):
-	# 	print(r)
-	# con.commit()
-	# con.close()
+	
 
 
 	
