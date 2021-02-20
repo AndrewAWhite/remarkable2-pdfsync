@@ -1,10 +1,12 @@
-import socket, sqlite3, os, json
+import socket, sqlite3, os, json, subprocess, sys
 from datetime import datetime
 import paramiko
+import pexpect
+from scp import SCPClient
 from config.ssh_config import ssh_passphrase, RM_IP
 
 XOCHITL_PATH = '/home/root/.local/share/remarkable/xochitl/'
-BACKUP_PATH = '/mnt/c/Andrew/Documents/remarkable/backup/'
+BACKUP_PATH = '/mnt/c/Andrew/Documents/remarkable/rmsync/'
 DB_FILE = './remarkable_sync.db'
 TIMESTAMP_FMT = '%Y-%m-%d %H:%M:%S'
 
@@ -25,6 +27,7 @@ def get_client():
 	client.load_system_host_keys()
 	client.connect(hostname=RM_IP, port=22, username='root', passphrase=ssh_passphrase)
 	return client
+	
 
 def get_modified(client, obj):
 	# use stat to get file attributes, and awk to extract modified time
@@ -68,12 +71,12 @@ def get_notebook_pages(client, notebook_id):
 	content = json.loads('\n'.join(stdout))
 	return content['pages']
 
-def get_notebook_name(client, notebook_id):
+def get_notebook_metadata(client, notebook_id):
 	stdin, stdout, stderr = client.exec_command(f"""
 		cat {XOCHITL_PATH}{notebook_id}.metadata
 	""")
 	metadata = json.loads('\n'.join(stdout))
-	return metadata['visibleName']
+	return metadata
 
 def get_db_con():
 	return sqlite3.connect(DB_FILE)
@@ -108,6 +111,7 @@ def create_tables(cur):
 		CREATE TABLE notebooks (
 			id text,
 			name text,
+			parent text,
 			modified text
 		);
 	""")
@@ -120,6 +124,13 @@ def create_tables(cur):
 		);
 	""")
 
+def get_parent_name(client, parent_id):
+	stdin, stdout, stderr = client.exec_command(f"""
+		cat {XOCHITL_PATH}{parent_id}.metadata
+	""")
+	metadata = json.loads('\n'.join(stdout))
+	return metadata['visibleName']
+
 def fill_db(client, cur):
 	base_modified = get_modified(client, XOCHITL_PATH)
 	cur.execute(f"""
@@ -131,11 +142,14 @@ def fill_db(client, cur):
 		page_ids = get_notebook_pages(client, notebook_id)
 		if not page_ids:
 			continue
-		notebook_name = get_notebook_name(client, notebook_id)
+		notebook_metadata = get_notebook_metadata(client, notebook_id)
+		parent = notebook_metadata['parent']
+		if parent.strip() != '' and parent != 'trash':
+			parent = get_parent_name(client, parent)
 		# create notebook row
 		cur.execute(f"""
-			INSERT INTO notebooks (id, name, modified)
-			VALUES ('{notebook_id}', '{notebook_name}', '{notebook_modified.strftime(TIMESTAMP_FMT)}');
+			INSERT INTO notebooks (id, name, parent, modified)
+			VALUES ('{notebook_id}', '{notebook_metadata['visibleName']}', '{parent}', '{notebook_modified.strftime(TIMESTAMP_FMT)}');
 		""")
 		page_number = 1
 		for page_id in page_ids:
@@ -147,7 +161,44 @@ def fill_db(client, cur):
 			""")
 			page_number += 1
 
+def create_backup_dir():
+	con = get_db_con()
+	cur = con.cursor()
+	parent_results = cur.execute("""
+		SELECT DISTINCT parent FROM notebooks;
+	""")
+	os.makedirs(f'{BACKUP_PATH}raw')
+	for parent_row in parent_results:
+		name = parent_row[0]
+		path = f'{BACKUP_PATH}pdf/{name}'
+		if not os.path.exists(path):
+			os.makedirs(path)
+	con.close()
 
+def copy_file(client, remote, local):
+	scp = SCPClient(client.get_transport())
+	scp.get(remote, local)
+	scp.close()
+
+def copy_all(client):
+	scp = SCPClient(client.get_transport())
+	scp.get(XOCHITL_PATH, local_path=f'{BACKUP_PATH}/raw', recursive=True)
+	scp.close()
+
+
+def convert_page(page, destination):
+	p2 = subprocess.Popen(
+		['./lines-are-rusty/target/debug/lines-are-rusty', '-o', destination, page], 
+		stdout = subprocess.PIPE)
+	p2.communicate()
+
+def rsync():
+	p = pexpect.spawn(
+		f'rsync -avzh --rsync-path=/opt/bin/rsync root@{RM_IP}:/home/root/.local/share/remarkable/xochitl {BACKUP_PATH}'
+		)
+	p.expect('Enter passphrase for key')
+	p.sendline(ssh_passphrase)
+	print(p.read().decode(encoding='utf-8'))
 
 def main():
 	if not is_rm_online():
@@ -155,10 +206,14 @@ def main():
 		exit(0)
 	client = get_client()
 	db_setup(client)
+	copy_all(client)
 	client.close()
 
 if __name__ == '__main__':
-	main()
+	# convert_page('/mnt/c/Andrew/Documents/remarkable/backup/raw/xochitl/5fbc7f03-b4ff-4dc7-b517-34a6ab901d6c/80917537-6b0a-4d33-bf38-a2d2594726a5.rm',
+	# '/mnt/c/Andrew/Documents/remarkable/backup/test.pdf')
+	rsync()
+	#main()
 	
 
 
