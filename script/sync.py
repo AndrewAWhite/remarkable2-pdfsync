@@ -200,6 +200,13 @@ def rsync():
 	p.sendline(ssh_passphrase)
 	print(p.read().decode(encoding='utf-8'))
 
+def make():
+	p = subprocess.Popen(
+		['make', '-f', './script/Makefile', f'SYNC_DIR={BACKUP_PATH}/xotchitl', f'BACKUP_DIR={BACKUP_PATH}/pdf', 'all'],
+		stdout = sys.stdout
+	)
+	p.communicate()
+
 def main():
 	if not is_rm_online():
 		print('remarkable could not be reached.')
@@ -212,7 +219,7 @@ def main():
 if __name__ == '__main__':
 	# convert_page('/mnt/c/Andrew/Documents/remarkable/backup/raw/xochitl/5fbc7f03-b4ff-4dc7-b517-34a6ab901d6c/80917537-6b0a-4d33-bf38-a2d2594726a5.rm',
 	# '/mnt/c/Andrew/Documents/remarkable/backup/test.pdf')
-	rsync()
+	make()
 	#main()
 	
 

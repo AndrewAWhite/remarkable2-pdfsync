@@ -148,3 +148,19 @@ notebooks will let us map the id to the notebook name, and let us know whether t
 
 pages will let us track on the page by page level which pages have been modified and when.
 
+
+
+## Rsync
+
+At this point, I realised I'd be better off just installing rsync on the remarkable via entware to perform the raw file sync portion of the process.
+
+## Make
+
+I've also realised that a large part of the functionality I've been hackily implementing is essentially a re-implementation of an issue make solved decades ago.
+
+# Revised Plan
+
+1. Python script checks if remarkable is reachable.
+2. If so, sync xochitl directory using rsync.
+3. Make then updates the local db for any modified files, and reproduces the pdf archive via calls to lines-are-rusty.
+
