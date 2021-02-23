@@ -8,6 +8,5 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 cd lines-are-rusty && cargo build
 
-# Next ensure sqlite is installed
-
-sudo apt-get update && sudo apt-get install sqlite3
+# Next ensure rsync is installed
+sudo apt-get update && sudo apt-get install rsync

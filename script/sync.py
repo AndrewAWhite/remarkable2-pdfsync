@@ -6,7 +6,7 @@ from config.ssh_config import ssh_passphrase, RM_IP
 XOCHITL_PATH = '/home/root/.local/share/remarkable/xochitl/'
 BACKUP_PATH = '/mnt/c/Andrew/Documents/remarkable/rmsync/'
 
-def is_rm_online():
+def rm_online():
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.settimeout(1)
 	try:
@@ -20,7 +20,7 @@ def is_rm_online():
 
 def get_dict(file_name):
 	data = None
-	with open(f'./{file_name}.txt', 'r', encoding='utf-8') as file:
+	with open(f'{BACKUP_PATH}{file_name}.txt', 'r', encoding='utf-8') as file:
 		data = json.loads(file.read())
 	# rotate from [{k1: v1},{k2: v2},...,{kn: vn}] (easier to produce in makefile) to {kn: vn}
 	d = {}
@@ -62,7 +62,6 @@ def build_notebooks():
 		print(f'built {notebook["name"]}')
 
 
-
 def rsync():
 	p = pexpect.spawn(
 		f'rsync -avzh --rsync-path=/opt/bin/rsync root@{RM_IP}:/home/root/.local/share/remarkable/xochitl {BACKUP_PATH}'
@@ -73,20 +72,28 @@ def rsync():
 
 def make():
 	p = subprocess.Popen(
-		['make', '-f', './script/Makefile', f'SYNC_DIR={BACKUP_PATH}xochitl', f'BACKUP_DIR={BACKUP_PATH}pdf', 'all'],
-		stdout = sys.stdout
+		['make', '-f', './script/Makefile', f'SYNC_DIR={BACKUP_PATH}xochitl', f'BACKUP_DIR={BACKUP_PATH}', 'all'],
+		stdout = subprocess.PIPE
 	)
-	p.communicate()
-	print('make done')
+	message = p.communicate()[0].decode('utf-8')
+	return message
+	
 
 
 def main():
+	# if remarkable is not reachable, exit
+	if not rm_online():
+		exit(0)
+	# otherwise, sync local and remote xochitl directories
 	rsync()
-	make()
+	# execute all rule in makefile
+	result = make()
+	# if nothing has changed, exit
+	if 'Nothing to be done' in result:
+		exit(0)
+	# otherwise, rebuild pdf notebooks
+	build_notebooks()
+
 
 if __name__ == '__main__':
-	build_notebooks()
-	#main()
-
-
-	
+	main()
